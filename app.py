@@ -9,7 +9,7 @@ import numpy as np
 
 app = Flask(__name__)
 
-model = YOLO('yolov8m.pt')
+model = YOLO('yolov8n.pt')
 
 def load_prices():
     if os.path.exists('dataset.csv'):
