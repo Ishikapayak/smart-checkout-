@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexScan AI | Smart Checkout</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <style>
+        :root { --accent-dark: #4a3728; }
+        body { font-family: 'Outfit', sans-serif; background-color: #fdfbf9; height: 100vh; margin: 0; }
+        .solid-card { background: white; border-radius: 20px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); border: 1px solid #eee; }
+        
+        #welcome-screen { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: white; z-index: 2000; display: flex; 
+            flex-direction: column; align-items: center; justify-content: center; 
+        }
+
+        #payment-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 3000; display: none;
+            align-items: center; justify-content: center;
+        }
+        .modal-container { width: 90%; max-width: 400px; padding: 30px; position: relative; }
+        .payment-choice { 
+            border: 2px solid #eee; padding: 15px; border-radius: 15px; 
+            cursor: pointer; transition: 0.3s; text-align: center;
+        }
+        .payment-choice:hover { border-color: var(--accent-dark); background: #fdfbf9; }
+        .qr-box canvas, .qr-box img { margin: 0 auto; }
+
+        .scanner-container { 
+            position: relative; background: #1a1a1a; border-radius: 15px; 
+            overflow: hidden; aspect-ratio: 16/9; display: flex; align-items: center; justify-content: center; 
+        }
+        #webcam { width: 100%; height: 100%; object-fit: cover; }
+        #scannedImage { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 10; background: #1a1a1a; }
+        .laser-line { position: absolute; width: 100%; height: 3px; background: #ff3b3b; box-shadow: 0 0 15px #ff3b3b; z-index: 15; top: 0; display: none; }
+
+        .btn-casual { background: var(--accent-dark); color: white; border: none; transition: 0.3s; }
+        .btn-casual:hover { background: #2d2118; color: white; transform: translateY(-2px); }
+        .total-text { font-size: 2.5rem; font-weight: 800; color: var(--accent-dark); }
+        .stars i { color: #ddd; cursor: pointer; font-size: 1.2rem; }
+        .stars i.active { color: #ffc107; }
+
+        @media print {
+            body * { visibility: hidden; }
+            #billBody, #billBody *, #totalDisplay { visibility: visible; }
+            #billBody { position: absolute; left: 0; top: 0; width: 100%; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="welcome-screen">
+        <div class="mb-4" style="color: var(--accent-dark);"><i class="fas fa-expand fa-4x"></i></div>
+        <h1 class="fw-bold">NexScan AI</h1>
+        <p class="text-muted fs-5 mb-5">Intelligent Visual Checkout System</p>
+        <button class="btn btn-casual btn-lg px-5 py-3 rounded-pill" onclick="initApp()">INITIALIZE SCANNER</button>
+    </div>
+
+    <div id="payment-modal">
+        <div class="solid-card shadow-lg modal-container">
+            <div id="method-selector">
+                <h3 class="fw-bold text-center mb-4">Choose Payment</h3>
+                <div class="d-grid gap-3">
+                    <div class="payment-choice" onclick="showOnlinePay()">
+                        <i class="fas fa-mobile-alt fa-2x mb-2" style="color: var(--accent-dark)"></i>
+                        <h5 class="m-0 fw-bold">Online Payment</h5>
+                        <p class="small text-muted m-0">UPI or Digital Wallet</p>
+                    </div>
+                    <div class="payment-choice" onclick="showCOD()">
+                        <i class="fas fa-hand-holding-usd fa-2x mb-2" style="color: var(--accent-dark)"></i>
+                        <h5 class="m-0 fw-bold">Cash on Delivery</h5>
+                        <p class="small text-muted m-0">Pay at counter</p>
+                    </div>
+                </div>
+                <div class="text-center mt-3"><button class="btn btn-link text-muted" onclick="closeModal()">Cancel</button></div>
+            </div>
+
+            <div id="online-view" class="d-none text-center">
+                <div id="qrcode" class="my-3 mx-auto qr-box"></div>
+                <h4 id="modalTotalOnline" class="fw-bold mb-3" style="color: var(--accent-dark);"></h4>
+                <div class="stars mb-3">
+                    <i class="fas fa-star" data-value="1"></i><i class="fas fa-star" data-value="2"></i>
+                    <i class="fas fa-star" data-value="3"></i><i class="fas fa-star" data-value="4"></i>
+                    <i class="fas fa-star" data-value="5"></i>
+                </div>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-dark w-100" onclick="window.print()"><i class="fas fa-print me-2"></i>Print Receipt</button>
+                    <button class="btn btn-casual w-100" onclick="location.reload()">Done</button>
+                </div>
+            </div>
+
+            <div id="cod-view" class="d-none text-center">
+                <div class="mb-3" style="color: #28a745;"><i class="fas fa-check-circle fa-4x"></i></div>
+                <h3 class="fw-bold">Order Placed</h3>
+                <div class="p-3 bg-light rounded-3 mb-3">
+                    <span class="text-muted small">AMOUNT DUE</span>
+                    <h2 id="modalTotalCOD" class="fw-bold m-0" style="color: var(--accent-dark);"></h2>
+                </div>
+                <div class="stars mb-3">
+                    <i class="fas fa-star" data-value="1"></i><i class="fas fa-star" data-value="2"></i>
+                    <i class="fas fa-star" data-value="3"></i><i class="fas fa-star" data-value="4"></i>
+                    <i class="fas fa-star" data-value="5"></i>
+                </div>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-dark w-100" onclick="window.print()"><i class="fas fa-print me-2"></i>Print Receipt</button>
+                    <button class="btn btn-casual w-100 py-2" onclick="location.reload()">Finish Session</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container-fluid py-3 h-100">
+        <div class="row h-100 g-3">
+            <div class="col-12 col-lg-7">
+                <div class="solid-card h-100 d-flex flex-column">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h4 class="fw-bold m-0" style="color: var(--accent-dark);"><i class="fas fa-barcode me-2"></i>NexScan AI</h4>
+                        <div class="d-flex gap-2">
+                            <input type="file" id="imageInput" hidden accept="image/*">
+                            <button onclick="goToUpload()" class="btn btn-outline-dark btn-sm rounded-pill px-3">Upload</button>
+                            <button onclick="startCamera()" id="startBtn" class="btn btn-outline-dark btn-sm rounded-pill px-3">Camera</button>
+                            <button onclick="stopCamera()" id="stopBtn" class="btn btn-outline-danger btn-sm rounded-pill d-none">Stop</button>
+                            <button onclick="captureAndScan()" id="scanBtn" class="btn btn-casual btn-sm px-4 rounded-pill" disabled>Scan Item</button>
+                        </div>
+                    </div>
+                    <div class="scanner-container">
+                        <video id="webcam" autoplay playsinline></video>
+                        <canvas id="photoCanvas" style="display:none;"></canvas>
+                        <div id="laser" class="laser-line"></div>
+                        <img id="scannedImage" src="" class="d-none">
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-lg-5">
+                <div class="solid-card h-100 d-flex flex-column">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold m-0">Inventory</h5>
+                        <button onclick="resetInventory()" class="btn btn-outline-danger btn-sm rounded-pill px-3" id="clearBtn" disabled>Clear</button>
+                    </div>
+                    <div class="flex-grow-1 overflow-auto" id="billBody">
+                        <div class="text-center py-5 opacity-50"><p>No items added</p></div>
+                    </div>
+                    <div class="summary mt-auto pt-3 border-top">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="fw-bold text-muted">TOTAL</span>
+                            <span id="totalDisplay" class="total-text">₹0.00</span>
+                        </div>
+                        <button class="btn btn-casual w-100 mt-3 py-3 fw-bold shadow" id="payBtn" disabled onclick="openCheckout()">PROCEED TO PAY</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('photoCanvas');
+        const scannedImg = document.getElementById('scannedImage');
+        const laser = document.getElementById('laser');
+        let streamPtr = null;
+        let currentTotal = "₹0.00";
+
+        function initApp() {
+            gsap.to("#welcome-screen", { y: "-100%", duration: 0.8, ease: "power4.inOut", onComplete: () => {
+                document.getElementById('welcome-screen').style.display = 'none';
+            }});
+        }
+
+        async function startCamera() {
+            try {
+                scannedImg.classList.add('d-none');
+                const constraints = { video: { facingMode: "environment" } };
+                streamPtr = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = streamPtr;
+                document.getElementById('startBtn').classList.add('d-none');
+                document.getElementById('stopBtn').classList.remove('d-none');
+                document.getElementById('scanBtn').disabled = false;
+            } catch (err) { alert("Camera access denied."); }
+        }
+
+        function stopCamera() {
+            if (streamPtr) streamPtr.getTracks().forEach(t => t.stop());
+            video.srcObject = null;
+            document.getElementById('startBtn').classList.remove('d-none');
+            document.getElementById('stopBtn').classList.add('d-none');
+            document.getElementById('scanBtn').disabled = true;
+        }
+
+        function resetInventory() {
+            document.getElementById('billBody').innerHTML = '<div class="text-center py-5 opacity-50"><p>No items added</p></div>';
+            currentTotal = "₹0.00";
+            document.getElementById('totalDisplay').innerText = "₹0.00";
+            document.getElementById('payBtn').disabled = true;
+            document.getElementById('clearBtn').disabled = true;
+            scannedImg.classList.add('d-none');
+            scannedImg.src = "";
+        }
+
+        function goToUpload() { stopCamera(); document.getElementById('imageInput').click(); }
+
+        document.getElementById('imageInput').onchange = async function() {
+            if (!this.files[0]) return;
+            const formData = new FormData();
+            formData.append('file', this.files[0]);
+            try {
+                const response = await fetch('/scan', { method: 'POST', body: formData });
+                handleResponse(await response.json());
+            } catch (e) { alert("Upload failed."); }
+        };
+
+        async function captureAndScan() {
+            laser.style.display = 'block';
+            gsap.fromTo(laser, {top: "0%"}, { top: "100%", duration: 1, repeat: 1, yoyo: true, onComplete: () => laser.style.display = 'none'});
+            canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            try {
+                const response = await fetch('/scan_frame', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: canvas.toDataURL('image/jpeg') })
+                });
+                handleResponse(await response.json());
+            } catch (e) { console.error(e); }
+        }
+
+        function handleResponse(data) {
+            if(data.annotated_image) {
+                scannedImg.src = data.annotated_image;
+                scannedImg.classList.remove('d-none');
+                stopCamera();
+            }
+            updateUI(data);
+        }
+
+        function updateUI(data) {
+            const billBody = document.getElementById('billBody');
+            if (data.bill && data.bill.length > 0) {
+                billBody.innerHTML = data.bill.map(item => `
+                    <div class="d-flex justify-content-between align-items-center mb-2 p-3 bg-light rounded">
+                        <span><strong style="color:var(--accent-dark)">${item.name}</strong> <small>x${item.qty}</small></span>
+                        <span class="fw-bold">${item.sub}</span>
+                    </div>`).join('');
+                currentTotal = data.total;
+                document.getElementById('totalDisplay').innerText = data.total;
+                document.getElementById('payBtn').disabled = false;
+                document.getElementById('clearBtn').disabled = false;
+            }
+        }
+
+        function openCheckout() { document.getElementById('payment-modal').style.display = 'flex'; }
+        function closeModal() { 
+            document.getElementById('payment-modal').style.display = 'none'; 
+            document.getElementById('method-selector').classList.remove('d-none');
+            document.getElementById('online-view').classList.add('d-none');
+            document.getElementById('cod-view').classList.add('d-none');
+        }
+
+        function showOnlinePay() {
+            document.getElementById('method-selector').classList.add('d-none');
+            document.getElementById('online-view').classList.remove('d-none');
+            const cleanAmount = currentTotal.replace(/[₹,]/g, '').trim();
+            const qrContainer = document.getElementById('qrcode');
+            qrContainer.innerHTML = "";
+            new QRCode(qrContainer, { text: `upi://pay?pa=store@upi&pn=NexScan&am=${cleanAmount}`, width: 140, height: 140 });
+            document.getElementById('modalTotalOnline').innerText = `Total: ₹${cleanAmount}`;
+        }
+
+        function showCOD() {
+            document.getElementById('method-selector').classList.add('d-none');
+            document.getElementById('cod-view').classList.remove('d-none');
+            document.getElementById('modalTotalCOD').innerText = currentTotal;
+        }
+
+        document.querySelectorAll('.stars i').forEach(star => {
+            star.onclick = function() {
+                const val = this.getAttribute('data-value');
+                this.parentElement.querySelectorAll('i').forEach((s, idx) => s.classList.toggle('active', idx < val));
+            }
+        });
+    </script>
+</body>
+</html>
